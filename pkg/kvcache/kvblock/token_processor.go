@@ -91,6 +91,14 @@ func (db *chunkedTokenDatabase) getInitHash(modelName string) uint64 {
 
 // hash computes the uint64 FNV-64a hash of the given parent, tokens,
 // and extra keys.
+//
+// The hash is computed using FNV-64a over the CBOR canonical encoding of
+// [parent, tokens, extra], ensuring deterministic results across runs and
+// compatibility with vLLM's prefix caching algorithm.
+//
+// The extra parameter enables cache differentiation for LoRA adapters and
+// multi-modal content. Supported types: nil, int, string, map[string]interface{}.
+// Must be CBOR-serializable.
 func (db *chunkedTokenDatabase) hash(parent uint64, tokens []uint32, extra interface{}) uint64 {
 	payload := []interface{}{parent, tokens, extra}
 

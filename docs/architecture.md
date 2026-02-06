@@ -117,9 +117,14 @@ sequenceDiagram
 To guarantee compatibility, the indexer perfectly matches vLLM's content-addressing logic.
 
 * **Token Chunking**: Prompts are converted to tokens, which are then grouped into fixed-size chunks (default: 16).
-* **Hash Algorithm**: A chained hash is computed. Each block's key is the **lower 64 bits of a SHA-256 hash**, generated from the CBOR-encoded `[parentHash, tokenChunk, extraKeys]` tuple.
+* **Hash Algorithm**: A chained hash is computed. Each block's key is an **FNV-64a hash**, generated from the CBOR-encoded `[parentHash, tokenChunk, extra]` tuple.
 * **Initialization**: The hash chain starts with a configurable `HashSeed`. This value's source **must** align with the `PYTHONHASHSEED` environment variable in the vLLM pods to ensure hashes are consistent across the entire system.
-
+* **Extra Parameter**: The third component of the hash tuple enables cache differentiation:
+  - **nil** (default): Standard prompts without LoRA or multi-modal content
+  - **int**: LoRA adapter ID (e.g., 42)
+  - **string**: Adapter name or content-affecting identifier (e.g., "lora-v2")
+  - **map**: Structured metadata (e.g., `{"lora_id": 42, "medium": "gpu"}`)
+Different `extra` values produce different block hashes, preventing cache pollution when the same tokens are used with different adapters or multi-modal inputs.
 #### Index Backends
 
 The `kvblock.Index` is an interface with swappable backends.

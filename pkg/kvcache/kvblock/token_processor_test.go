@@ -20,6 +20,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -211,4 +212,266 @@ func TestGetInitHash_Deterministic(t *testing.T) {
 	}
 
 	assert.NotZero(t, expectedHash, "Hash should not be zero")
+}
+
+func TestHash_ExtraCBORDeterminism(t *testing.T) {
+	// Create a canonical CBOR encoder
+	// This ensures deterministic encoding (same value -> same bytes, always)
+	encMode, err := cbor.CanonicalEncOptions().EncMode()
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name  string
+		extra interface{}
+	}{
+		{"nil", nil},
+		{"int_zero", 0},
+		{"int_positive", 42},
+		{"int_negative", -10},
+		{"string_empty", ""},
+		{"string_medium", "gpu"},
+		{"string_long", "very-long-adapter-name-with-special-chars-123"},
+		{"map_empty", map[string]interface{}{}},
+		{"map_lora_only", map[string]interface{}{"lora_id": 42}},
+		{"map_combined", map[string]interface{}{"lora_id": 42, "medium": "gpu"}},
+		{"map_nested", map[string]interface{}{"meta": map[string]interface{}{"version": 1}}},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Encode the same value 5 times
+			var encodings [][]byte
+			for i := 0; i < 5; i++ {
+				bytes, err := encMode.Marshal(tc.extra)
+				require.NoError(t, err)
+				encodings = append(encodings, bytes)
+			}
+
+			// All encodings must be identical
+			for i := 1; i < len(encodings); i++ {
+				assert.Equal(t, encodings[0], encodings[i],
+					"Encoding %d differs from encoding 0", i)
+			}
+		})
+	}
+}
+
+func TestHash_ExtraMapKeyOrdering(t *testing.T) {
+	// Create a canonical CBOR encoder
+	encMode, err := cbor.CanonicalEncOptions().EncMode()
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name string
+		maps []map[string]interface{}
+		desc string
+	}{
+		{
+			name: "two_keys_different_order",
+			maps: []map[string]interface{}{
+				{"lora_id": 42, "medium": "gpu"},
+				{"medium": "gpu", "lora_id": 42},
+			},
+			desc: "Same keys inserted in different order",
+		},
+		{
+			name: "three_keys_different_order",
+			maps: []map[string]interface{}{
+				{"lora_id": 42, "medium": "gpu", "version": 3},
+				{"version": 3, "medium": "gpu", "lora_id": 42},
+				{"medium": "gpu", "version": 3, "lora_id": 42},
+			},
+			desc: "Three keys with different permutations",
+		},
+		{
+			name: "nested_maps",
+			maps: []map[string]interface{}{
+				{"outer": map[string]interface{}{"lora_id": 42, "medium": "gpu"}},
+				{"outer": map[string]interface{}{"medium": "gpu", "lora_id": 42}},
+			},
+			desc: "Nested maps with different key order",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var encodings [][]byte
+
+			// Encode each map
+			for _, m := range tc.maps {
+				bytes, err := encMode.Marshal(m)
+				assert.NoError(t, err)
+				encodings = append(encodings, bytes)
+			}
+
+			// All encodings must be identical
+			expected := encodings[0]
+			for i := 1; i < len(encodings); i++ {
+				assert.Equal(t, expected, encodings[i],
+					"Map %d encoding differs from map 0: %s", i, tc.desc)
+			}
+		})
+	}
+}
+
+func TestHash_ExtraDifferentiation(t *testing.T) {
+	// Create a canonical CBOR encoder
+	encMode, err := cbor.CanonicalEncOptions().EncMode()
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name   string
+		extra1 interface{}
+		extra2 interface{}
+		desc   string
+	}{
+		{
+			name:   "nil_vs_zero",
+			extra1: nil,
+			extra2: 0,
+			desc:   "nil should differ from zero",
+		},
+		{
+			name:   "different_ints",
+			extra1: 42,
+			extra2: 99,
+			desc:   "Different LoRA IDs",
+		},
+		{
+			name:   "different_strings",
+			extra1: "gpu",
+			extra2: "cpu",
+			desc:   "Different medium IDs",
+		},
+		{
+			name:   "string_vs_int",
+			extra1: "42",
+			extra2: 42,
+			desc:   "String vs int, type matters",
+		},
+		{
+			name:   "map_different_values",
+			extra1: map[string]interface{}{"lora_id": 42},
+			extra2: map[string]interface{}{"lora_id": 99},
+			desc:   "Maps with different values",
+		},
+		{
+			name:   "map_different_keys",
+			extra1: map[string]interface{}{"lora_id": 42},
+			extra2: map[string]interface{}{"lora_adapter": 42},
+			desc:   "Maps with different values but same values",
+		},
+		{
+			name:   "map_vs_nil",
+			extra1: map[string]interface{}{"lora_id": 42},
+			extra2: nil,
+			desc:   "Maps with LoRA ID vs nil (no LoRA ID)",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bytes1, err := encMode.Marshal(tc.extra1)
+			require.NoError(t, err)
+
+			bytes2, err := encMode.Marshal(tc.extra2)
+			require.NoError(t, err)
+
+			// These must be different
+			assert.NotEqual(t, bytes1, bytes2,
+				"CBOR encodings should differ: %s", tc.desc)
+		})
+	}
+}
+
+func TestHash_ExtraVLLMCompatibility(t *testing.T) {
+	encMode, err := cbor.CanonicalEncOptions().EncMode()
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name     string
+		extra    interface{}
+		scenario string
+	}{
+		{
+			name:     "no_lora_no_multimodal",
+			extra:    nil,
+			scenario: "Standard text-only prompt without LoRA adapter",
+		},
+		{
+			name:     "lora_v0_single_adapter",
+			extra:    42,
+			scenario: "vLLM v0: single LoRA adapter with hash(lora_int_id)",
+		},
+		{
+			name:     "lora_v1_simple_tuple",
+			extra:    map[string]interface{}{"lora_id": 42, "mm_hash": nil, "cache_salt": nil},
+			scenario: "vLLM v1: LoRA only (lora_id, mm_hash=None, cache_salt=None)",
+		},
+		{
+			name:     "lora_v1_with_multimodal",
+			extra:    map[string]interface{}{"lora_id": 42, "mm_hash": "blake3_abc123", "cache_salt": "xyz"},
+			scenario: "vLLM v1: LoRA + multi-modal content with Blake3 hash",
+		},
+		{
+			name:     "medium_identifier",
+			extra:    "gpu",
+			scenario: "Custom medium identifier for cache segmentation",
+		},
+		{
+			name:     "structured_metadata",
+			extra:    map[string]interface{}{"lora_id": 42, "medium": "gpu", "version": 1},
+			scenario: "Complex metadata combining multiple differentiation factors",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bytes, err := encMode.Marshal(tc.extra)
+			require.NoError(t, err, "Should successfully encode: %s", tc.scenario)
+			assert.NotEmpty(t, bytes, "Encoded bytes should not be empty: %s", tc.scenario)
+		})
+	}
+}
+
+func TestHash_ExtraTypeSupport(t *testing.T) {
+	encMode, err := cbor.CanonicalEncOptions().EncMode()
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name      string
+		extra     interface{}
+		shouldErr bool
+	}{
+		// Supported types that must work
+		{"nil", nil, false},
+		{"int", 42, false},
+		{"int64", int64(9223372036854775807), false},
+		{"string", "adapter-name", false},
+		{"map_string_int", map[string]interface{}{"id": 42}, false},
+		{"map_string_string", map[string]interface{}{"name": "lora"}, false},
+		{"map_mixed", map[string]interface{}{"id": 42, "name": "lora"}, false},
+		{"bool", true, false},
+		{"float", 3.14, false},
+		{"slice_int", []interface{}{1, 2, 3}, false},
+		{"nested_map", map[string]interface{}{"meta": map[string]interface{}{"v": 1}}, false},
+
+		// Edge cases that should still work
+		{"empty_string", "", false},
+		{"empty_map", map[string]interface{}{}, false},
+		{"zero", 0, false},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			bytes, err := encMode.Marshal(tc.extra)
+
+			if tc.shouldErr {
+				assert.Error(t, err, "Expected encoding to fail")
+			} else {
+				require.NoError(t, err, "Expected encoding to succeed")
+				assert.NotEmpty(t, bytes, "Encoded bytes should not be empty")
+			}
+		})
+	}
 }
