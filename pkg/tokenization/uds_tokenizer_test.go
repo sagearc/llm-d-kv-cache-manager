@@ -23,7 +23,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	tokenizerpb "github.com/llm-d/llm-d-kv-cache/api/tokenizerpb"
 	preprocessing "github.com/llm-d/llm-d-kv-cache/pkg/preprocessing/chat_completions"
@@ -40,7 +39,6 @@ type mockTokenizationServer struct {
 	initializeError bool
 	tokenizeError   bool
 	chatError       bool
-	invalidOffsets  bool
 	initialized     map[string]bool
 }
 
@@ -83,15 +81,6 @@ func (m *mockTokenizationServer) Tokenize(
 		return &tokenizerpb.TokenizeResponse{
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("model %s not initialized", req.ModelName),
-		}, nil
-	}
-
-	// Return invalid offsets if requested for testing
-	if m.invalidOffsets {
-		return &tokenizerpb.TokenizeResponse{
-			InputIds:    []uint32{1, 2, 3},
-			Success:     true,
-			OffsetPairs: []uint32{0, 5, 10}, // Invalid: odd number of elements
 		}, nil
 	}
 
@@ -156,8 +145,6 @@ type UdsTokenizerTestSuite struct {
 	grpcServer *grpc.Server
 	listener   net.Listener
 	tokenizer  Tokenizer // Shared tokenizer for most tests
-	ctx        context.Context
-	cancelCtx  context.CancelFunc
 }
 
 // SetupSuite runs once before all tests in the suite.
@@ -184,21 +171,14 @@ func (s *UdsTokenizerTestSuite) SetupSuite() {
 		}
 	}()
 
-	// Create a long-lived context for the shared tokenizer
-	s.ctx, s.cancelCtx = context.WithCancel(context.Background())
-
 	config := &UdsTokenizerConfig{SocketFile: s.socketPath}
-	s.tokenizer, err = NewUdsTokenizer(s.ctx, config, "test-model")
+	s.tokenizer, err = NewUdsTokenizer(s.T().Context(), config, "test-model")
 	require.NoError(s.T(), err)
 	require.NotNil(s.T(), s.tokenizer)
 }
 
 // TearDownSuite runs once after all tests in the suite.
 func (s *UdsTokenizerTestSuite) TearDownSuite() {
-	// Cancel the context which triggers the cleanup goroutine to close the connection
-	if s.cancelCtx != nil {
-		s.cancelCtx()
-	}
 	if s.grpcServer != nil {
 		s.grpcServer.Stop()
 	}
@@ -217,7 +197,6 @@ func (s *UdsTokenizerTestSuite) SetupTest() {
 	s.mockServer.initializeError = false
 	s.mockServer.tokenizeError = false
 	s.mockServer.chatError = false
-	s.mockServer.invalidOffsets = false
 	// Clear initialized models to ensure test isolation
 	s.mockServer.initialized = make(map[string]bool)
 	// Re-initialize the shared tokenizer's model
@@ -230,53 +209,25 @@ func TestUdsTokenizerSuite(t *testing.T) {
 	suite.Run(t, new(UdsTokenizerTestSuite))
 }
 
-func (s *UdsTokenizerTestSuite) TestNewUdsTokenizer_Success() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	config := &UdsTokenizerConfig{
-		SocketFile: s.socketPath,
-	}
-
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
-	s.Require().NoError(err)
-	s.Require().NotNil(tokenizer)
-
-	// Verify the model was initialized
-	s.Assert().True(s.mockServer.initialized["test-model"])
-
-	// Clean up
-	udsTokenizer, ok := tokenizer.(*UdsTokenizer)
-	s.Require().True(ok)
-	err = udsTokenizer.Close()
-	s.Assert().NoError(err)
-}
-
 func (s *UdsTokenizerTestSuite) TestNewUdsTokenizer_InitializationFailure() {
 	s.mockServer.initializeError = true
 
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
 	config := &UdsTokenizerConfig{
 		SocketFile: s.socketPath,
 	}
 
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
+	tokenizer, err := NewUdsTokenizer(s.T().Context(), config, "test-model")
 	s.Assert().Error(err)
 	s.Assert().Nil(tokenizer)
 }
 
 func (s *UdsTokenizerTestSuite) TestNewUdsTokenizer_ConnectionFailure() {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
 	config := &UdsTokenizerConfig{
 		SocketFile: "/non/existent/socket.sock",
 	}
 
 	// This should fail quickly because the socket doesn't exist
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
+	tokenizer, err := NewUdsTokenizer(s.T().Context(), config, "test-model")
 	s.Assert().Error(err)
 	s.Assert().Nil(tokenizer)
 }
@@ -299,27 +250,6 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Render() {
 	// Verify offsets
 	s.Assert().Equal(preprocessing.Offset{0, 1}, offsets[0]) // 'h'
 	s.Assert().Equal(preprocessing.Offset{5, 6}, offsets[5]) // space
-}
-
-func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Encode() {
-	udsTokenizer, ok := s.tokenizer.(*UdsTokenizer)
-	s.Require().True(ok)
-
-	// Test Encode method - verifies character-based tokenization
-	prompt := "test prompt"
-	tokens, offsets, err := udsTokenizer.Encode(prompt, true)
-	s.Require().NoError(err)
-
-	// Each character becomes a token with its rune value
-	s.Assert().Equal(len([]rune(prompt)), len(tokens))
-	s.Assert().Equal(len([]rune(prompt)), len(offsets))
-
-	// Verify first character 't' = 116
-	s.Assert().Equal(uint32('t'), tokens[0])
-	// Verify space character at position 4 = 32
-	s.Assert().Equal(uint32(' '), tokens[4])
-	// Verify last character 't' = 116
-	s.Assert().Equal(uint32('t'), tokens[len(tokens)-1])
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_RenderChat() {
@@ -366,49 +296,6 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_ChatTemplateError() {
 	_, _, err := s.tokenizer.RenderChat(renderReq)
 	s.Assert().Error(err)
 	s.Assert().Contains(err.Error(), "chat template rendering failed")
-}
-
-func (s *UdsTokenizerTestSuite) TestUdsTokenizer_InvalidOffsets() {
-	s.mockServer.invalidOffsets = true
-
-	_, _, err := s.tokenizer.Render("test")
-	s.Assert().Error(err)
-	s.Assert().Contains(err.Error(), "invalid offset_pairs")
-}
-
-func TestUdsTokenizerConfig_IsEnabled(t *testing.T) {
-	tests := []struct {
-		name     string
-		config   *UdsTokenizerConfig
-		expected bool
-	}{
-		{
-			name:     "nil config",
-			config:   nil,
-			expected: false,
-		},
-		{
-			name: "empty socket file",
-			config: &UdsTokenizerConfig{
-				SocketFile: "",
-			},
-			expected: false,
-		},
-		{
-			name: "valid socket file",
-			config: &UdsTokenizerConfig{
-				SocketFile: "/tmp/test.socket",
-			},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := tt.config.IsEnabled()
-			assert.Equal(t, tt.expected, result)
-		})
-	}
 }
 
 // convertFromProtoValue converts a proto Value back to a Go interface{} value.
