@@ -43,6 +43,8 @@ Before using tokenization methods, initialize the tokenizer for a specific model
 | `THREAD_POOL_SIZE` | Number of worker threads for all CPU-intensive operations | 2 * CPU cores (limited by container resources, max 32) |
 | `PROBE_PORT` | Port for health check endpoint | 8082 |
 | `USE_MODELSCOPE` | Whether to download tokenizer files from ModelScope (true) or Hugging Face (false) | false |
+| `ENABLE_GRPC_REFLECTION` | Enable gRPC server reflection for service discovery | disabled |
+
 
 ## gRPC Service Definition
 
@@ -120,6 +122,98 @@ Response:
   "timestamp": 1234567890.123
 }
 ```
+
+## Usage Examples
+
+You can interact with the gRPC service using `grpcurl`.
+
+**Note:** gRPC reflection must be enabled for `grpcurl` to work. Set the environment variable before starting the server:
+```bash
+export ENABLE_GRPC_REFLECTION=1
+python run_grpc_server.py
+```
+
+Reflection is disabled by default for security reasons, as it increases the exposed surface area by allowing service/method/message discovery.
+
+### List available services
+```bash
+grpcurl -plaintext unix:///tmp/tokenizer/tokenizer-uds.socket list
+```
+```
+grpc.reflection.v1alpha.ServerReflection
+tokenization.TokenizationService
+```
+
+### Describe the TokenizationService
+```bash
+grpcurl -plaintext unix:///tmp/tokenizer/tokenizer-uds.socket describe tokenization.TokenizationService
+```
+```
+tokenization.TokenizationService is a service:
+service TokenizationService {
+  rpc InitializeTokenizer ( .tokenization.InitializeTokenizerRequest ) returns ( .tokenization.InitializeTokenizerResponse );
+  rpc RenderChatTemplate ( .tokenization.ChatTemplateRequest ) returns ( .tokenization.ChatTemplateResponse );
+  rpc Tokenize ( .tokenization.TokenizeRequest ) returns ( .tokenization.TokenizeResponse );
+}
+```
+
+### Initialize tokenizer for a specific model
+```bash
+grpcurl -plaintext -d '{"model_name": "Qwen/Qwen2.5-0.5B-Instruct"}' \
+  unix:///tmp/tokenizer/tokenizer-uds.socket \
+  tokenization.TokenizationService/InitializeTokenizer
+```
+```json
+{
+  "success": true
+}
+```
+
+### Tokenize text
+```bash
+grpcurl -plaintext -d '{
+  "input": "Hello world",
+  "add_special_tokens": true,
+  "model_name": "Qwen/Qwen2.5-0.5B-Instruct"
+}' unix:///tmp/tokenizer/tokenizer-uds.socket \
+  tokenization.TokenizationService/Tokenize
+```
+```json
+{
+  "input_ids": [
+    9707,
+    1879
+  ],
+  "success": true,
+  "offset_pairs": [
+    0,
+    5,
+    5,
+    11
+  ]
+}
+```
+
+### Render chat template
+```bash
+grpcurl -plaintext -d '{
+  "conversation_turns": [{
+    "messages": [
+      {"role": "user", "content": "Hello, how are you?"}
+    ]
+  }],
+  "add_generation_prompt": true,
+  "model_name": "Qwen/Qwen2.5-0.5B-Instruct"
+}' unix:///tmp/tokenizer/tokenizer-uds.socket \
+  tokenization.TokenizationService/RenderChatTemplate
+```
+```json
+{
+  "rendered_prompt": "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\nHello, how are you?<|im_end|>\n",
+  "success": true
+}
+```
+
 
 ## Testing
 
