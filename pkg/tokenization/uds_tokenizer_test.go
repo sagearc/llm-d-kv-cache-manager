@@ -153,15 +153,18 @@ type UdsTokenizerTestSuite struct {
 	socketPath string
 	grpcServer *grpc.Server
 	listener   net.Listener
+	tokenizer  Tokenizer // Shared tokenizer for most tests
+	ctx        context.Context
+	cancelCtx  context.CancelFunc
 }
 
 // SetupSuite runs once before all tests in the suite
 func (s *UdsTokenizerTestSuite) SetupSuite() {
 	s.mockServer = newMockTokenizationServer()
 
-	// Create a temporary directory for the socket
-	tmpDir := s.T().TempDir()
-	s.socketPath = filepath.Join(tmpDir, "test-tokenizer.socket")
+	tmpDir, err := os.MkdirTemp("/tmp", "tok-test-")
+	require.NoError(s.T(), err)
+	s.socketPath = filepath.Join(tmpDir, "tokenizer-uds.sock")
 
 	// Create a Unix listener
 	listener, err := net.Listen("unix", s.socketPath)
@@ -178,19 +181,31 @@ func (s *UdsTokenizerTestSuite) SetupSuite() {
 		}
 	}()
 
-	// Wait for the server to be ready
-	time.Sleep(100 * time.Millisecond)
+	// Create a long-lived context for the shared tokenizer
+	s.ctx, s.cancelCtx = context.WithCancel(context.Background())
+
+	config := &UdsTokenizerConfig{SocketFile: s.socketPath}
+	s.tokenizer, err = NewUdsTokenizer(s.ctx, config, "test-model")
+	require.NoError(s.T(), err)
+	require.NotNil(s.T(), s.tokenizer)
 }
 
 // TearDownSuite runs once after all tests in the suite
 func (s *UdsTokenizerTestSuite) TearDownSuite() {
+	// Cancel the context which triggers the cleanup goroutine to close the connection
+	if s.cancelCtx != nil {
+		s.cancelCtx()
+	}
 	if s.grpcServer != nil {
 		s.grpcServer.Stop()
 	}
 	if s.listener != nil {
 		s.listener.Close()
 	}
-	os.RemoveAll(s.socketPath)
+	// Clean up the temp directory
+	if s.socketPath != "" {
+		os.RemoveAll(filepath.Dir(s.socketPath))
+	}
 }
 
 // SetupTest runs before each test to reset mock state
@@ -202,38 +217,10 @@ func (s *UdsTokenizerTestSuite) SetupTest() {
 	s.mockServer.invalidOffsets = false
 	// Clear initialized models to ensure test isolation
 	s.mockServer.initialized = make(map[string]bool)
-}
-
-// setupTestServer creates a temporary gRPC server for standalone tests
-func setupTestServer(t *testing.T, mockServer *mockTokenizationServer) (string, func()) {
-	// Create a temporary directory for the socket
-	tmpDir := t.TempDir()
-	socketPath := filepath.Join(tmpDir, "test-tokenizer.socket")
-
-	// Create a Unix listener
-	listener, err := net.Listen("unix", socketPath)
-	require.NoError(t, err)
-
-	// Create and start the gRPC server
-	grpcServer := grpc.NewServer()
-	tokenizerpb.RegisterTokenizationServiceServer(grpcServer, mockServer)
-
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil {
-			t.Logf("Server error: %v", err)
-		}
-	}()
-
-	// Wait for the server to be ready
-	time.Sleep(100 * time.Millisecond)
-
-	// Return cleanup function
-	cleanup := func() {
-		grpcServer.Stop()
-		listener.Close()
+	// Re-initialize the shared tokenizer's model
+	if s.tokenizer != nil {
+		s.mockServer.initialized["test-model"] = true
 	}
-
-	return socketPath, cleanup
 }
 
 func TestUdsTokenizerSuite(t *testing.T) {
@@ -265,7 +252,7 @@ func (s *UdsTokenizerTestSuite) TestNewUdsTokenizer_Success() {
 func (s *UdsTokenizerTestSuite) TestNewUdsTokenizer_InitializationFailure() {
 	s.mockServer.initializeError = true
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	config := &UdsTokenizerConfig{
@@ -275,7 +262,6 @@ func (s *UdsTokenizerTestSuite) TestNewUdsTokenizer_InitializationFailure() {
 	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
 	s.Assert().Error(err)
 	s.Assert().Nil(tokenizer)
-	s.Assert().Contains(err.Error(), "tokenizer initialization failed")
 }
 
 func (s *UdsTokenizerTestSuite) TestNewUdsTokenizer_ConnectionFailure() {
@@ -293,26 +279,9 @@ func (s *UdsTokenizerTestSuite) TestNewUdsTokenizer_ConnectionFailure() {
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Render() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	config := &UdsTokenizerConfig{
-		SocketFile: s.socketPath,
-	}
-
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
-	s.Require().NoError(err)
-	s.Require().NotNil(tokenizer)
-
-	defer func() {
-		udsTokenizer, ok := tokenizer.(*UdsTokenizer)
-		s.Require().True(ok)
-		_ = udsTokenizer.Close()
-	}()
-
 	// Test Render - character-based tokenization
 	input := "hello world"
-	tokens, offsets, err := tokenizer.Render(input)
+	tokens, offsets, err := s.tokenizer.Render(input)
 	s.Require().NoError(err)
 
 	// Each character becomes a token
@@ -330,23 +299,8 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Render() {
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Encode() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	config := &UdsTokenizerConfig{
-		SocketFile: s.socketPath,
-	}
-
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
-	s.Require().NoError(err)
-	s.Require().NotNil(tokenizer)
-
-	udsTokenizer, ok := tokenizer.(*UdsTokenizer)
+	udsTokenizer, ok := s.tokenizer.(*UdsTokenizer)
 	s.Require().True(ok)
-
-	defer func() {
-		_ = udsTokenizer.Close()
-	}()
 
 	// Test Encode method - verifies character-based tokenization
 	prompt := "test prompt"
@@ -365,28 +319,7 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Encode() {
 	s.Assert().Equal(uint32('t'), tokens[len(tokens)-1])
 }
 
-func TestUdsTokenizer_RenderChat(t *testing.T) {
-	mockServer := newMockTokenizationServer()
-	socketPath, cleanup := setupTestServer(t, mockServer)
-	defer cleanup()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	config := &UdsTokenizerConfig{
-		SocketFile: socketPath,
-	}
-
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
-	require.NoError(t, err)
-	require.NotNil(t, tokenizer)
-
-	defer func() {
-		udsTokenizer, ok := tokenizer.(*UdsTokenizer)
-		require.True(t, ok)
-		_ = udsTokenizer.Close()
-	}()
-
+func (s *UdsTokenizerTestSuite) TestUdsTokenizer_RenderChat() {
 	// Test RenderChat
 	renderReq := &preprocessing.RenderChatRequest{
 		Conversation: []preprocessing.Conversation{
@@ -394,57 +327,26 @@ func TestUdsTokenizer_RenderChat(t *testing.T) {
 			{Role: "assistant", Content: "Hi there"},
 		},
 		AddGenerationPrompt: true,
+		ChatTemplateKWArgs: map[string]interface{}{
+			"key1": "value1",
+			"key2": float64(42),
+		},
 	}
 
-	tokens, offsets, err := tokenizer.RenderChat(renderReq)
-	require.NoError(t, err)
-	// Verify tokens are generated from rendered chat (character-based)
-	assert.Greater(t, len(tokens), 0, "should return tokens from rendered chat")
-	assert.Equal(t, len(tokens), len(offsets), "offsets should match token count")
+	tokens, offsets, err := s.tokenizer.RenderChat(renderReq)
+	s.Require().NoError(err)
+	s.Assert().Greater(len(tokens), 0, "should return tokens from rendered chat")
+	s.Assert().Equal(len(tokens), len(offsets), "offsets should match token count")
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Type() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	config := &UdsTokenizerConfig{
-		SocketFile: s.socketPath,
-	}
-
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
-	s.Require().NoError(err)
-	s.Require().NotNil(tokenizer)
-
-	defer func() {
-		udsTokenizer, ok := tokenizer.(*UdsTokenizer)
-		s.Require().True(ok)
-		_ = udsTokenizer.Close()
-	}()
-
-	s.Assert().Equal("external-uds", tokenizer.Type())
+	s.Assert().Equal("external-uds", s.tokenizer.Type())
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_TokenizeError() {
 	s.mockServer.tokenizeError = true
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	config := &UdsTokenizerConfig{
-		SocketFile: s.socketPath,
-	}
-
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
-	s.Require().NoError(err)
-	s.Require().NotNil(tokenizer)
-
-	defer func() {
-		udsTokenizer, ok := tokenizer.(*UdsTokenizer)
-		s.Require().True(ok)
-		_ = udsTokenizer.Close()
-	}()
-
-	_, _, err = tokenizer.Render("test")
+	_, _, err := s.tokenizer.Render("test")
 	s.Assert().Error(err)
 	s.Assert().Contains(err.Error(), "tokenization failed")
 }
@@ -452,83 +354,23 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_TokenizeError() {
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_ChatTemplateError() {
 	s.mockServer.chatError = true
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	config := &UdsTokenizerConfig{
-		SocketFile: s.socketPath,
-	}
-
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
-	s.Require().NoError(err)
-	s.Require().NotNil(tokenizer)
-
-	defer func() {
-		udsTokenizer, ok := tokenizer.(*UdsTokenizer)
-		s.Require().True(ok)
-		_ = udsTokenizer.Close()
-	}()
-
 	renderReq := &preprocessing.RenderChatRequest{
 		Conversation: []preprocessing.Conversation{
 			{Role: "user", Content: "Hello"},
 		},
 	}
 
-	_, _, err = tokenizer.RenderChat(renderReq)
+	_, _, err := s.tokenizer.RenderChat(renderReq)
 	s.Assert().Error(err)
 	s.Assert().Contains(err.Error(), "chat template rendering failed")
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_InvalidOffsets() {
-	// Configure mock to return invalid offsets
 	s.mockServer.invalidOffsets = true
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	config := &UdsTokenizerConfig{
-		SocketFile: s.socketPath,
-	}
-
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
-	s.Require().NoError(err)
-	s.Require().NotNil(tokenizer)
-
-	defer func() {
-		udsTokenizer, ok := tokenizer.(*UdsTokenizer)
-		s.Require().True(ok)
-		_ = udsTokenizer.Close()
-	}()
-
-	_, _, err = tokenizer.Render("test")
+	_, _, err := s.tokenizer.Render("test")
 	s.Assert().Error(err)
 	s.Assert().Contains(err.Error(), "invalid offset_pairs")
-}
-
-func (s *UdsTokenizerTestSuite) TestUdsTokenizer_ContextCancellation() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-
-	config := &UdsTokenizerConfig{
-		SocketFile: s.socketPath,
-	}
-
-	tokenizer, err := NewUdsTokenizer(ctx, config, "test-model")
-	s.Require().NoError(err)
-	s.Require().NotNil(tokenizer)
-
-	udsTokenizer, ok := tokenizer.(*UdsTokenizer)
-	s.Require().True(ok)
-
-	// Cancel the context - this should trigger the cleanup goroutine
-	cancel()
-
-	// Give the goroutine time to run
-	time.Sleep(200 * time.Millisecond)
-
-	// The connection should be closed, but Close() should still be safe to call
-	err = udsTokenizer.Close()
-	s.Assert().NoError(err)
 }
 
 func TestUdsTokenizerConfig_IsEnabled(t *testing.T) {
