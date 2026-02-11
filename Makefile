@@ -189,43 +189,63 @@ clang:
 
 ##@ Development
 
-# Common environment variables for Go tests and builds
+# Build tag for embedded (Python/cgo) tokenizers
+EMBEDDED_TAGS := embedded_tokenizers
+
+# Common environment variables for Go tests and builds (with embedded tokenizers / Python cgo)
 export CGO_ENABLED=1
 export CGO_CFLAGS=$(CGO_CFLAGS_FINAL)
 export CGO_LDFLAGS=$(CGO_LDFLAGS_FINAL)
 export PYTHONPATH=$(shell pwd)/pkg/preprocessing/chat_completions/vllm_source:$(shell pwd)/pkg/preprocessing/chat_completions:$(VENV_DIR)/lib/python$(PYTHON_VERSION)/site-packages
 
 .PHONY: test
-test: unit-test e2e-test ## Run all tests
+test: unit-test e2e-test ## Run all tests (UDS-only + embedded)
 
 .PHONY: unit-test
-unit-test: install-python-deps download-zmq ## Run unit tests
-	@printf "\033[33;1m==== Running unit tests ====\033[0m\n"
+unit-test: unit-test-uds unit-test-embedded ## Run unit tests (UDS-only + embedded)
+
+.PHONY: unit-test-uds
+unit-test-uds: download-zmq ## Run unit tests without embedded tokenizers (no Python required)
+	@printf "\033[33;1m==== Running unit tests (UDS-only, no embedded tokenizers) ====\033[0m\n"
 	@go test -v ./pkg/...
 
+.PHONY: unit-test-embedded
+unit-test-embedded: install-python-deps download-zmq ## Run unit tests with embedded tokenizers
+	@printf "\033[33;1m==== Running unit tests (with embedded tokenizers) ====\033[0m\n"
+	@go test -v -tags $(EMBEDDED_TAGS) ./pkg/...
+
 .PHONY: e2e-test
-e2e-test: download-local-llama3 install-python-deps download-zmq ## Run end-to-end tests
+e2e-test: download-local-llama3 install-python-deps download-zmq ## Run end-to-end tests (requires embedded tokenizers)
 	@printf "\033[33;1m==== Running e2e tests ====\033[0m\n"
-	@go test -v ./tests/...
+	@go test -v -tags $(EMBEDDED_TAGS) ./tests/...
 
 .PHONY: bench
-bench: install-python-deps download-zmq ## Run benchmarks
+bench: install-python-deps download-zmq ## Run benchmarks (requires embedded tokenizers)
 	@printf "\033[33;1m==== Running chat template benchmarks ====\033[0m\n"
-	@go test -bench=. -benchmem ./pkg/preprocessing/chat_completions/
+	@go test -bench=. -benchmem -tags $(EMBEDDED_TAGS) ./pkg/preprocessing/chat_completions/
 	@printf "\033[33;1m==== Running tokenization benchmarks ====\033[0m\n"
-	@go test -bench=. -benchmem ./pkg/tokenization/
+	@go test -bench=. -benchmem -tags $(EMBEDDED_TAGS) ./pkg/tokenization/
 
 .PHONY: run
-run: build ## Run the application locally
+run: build-embedded ## Run the application locally
 	@printf "\033[33;1m==== Running application ====\033[0m\n"
 	@./bin/$(PROJECT_NAME)
 
 ##@ Build
 
 .PHONY: build
-build: check-go install-python-deps download-zmq ## Build the application binary
-	@printf "\033[33;1m==== Building application binary ====\033[0m\n"
-	@go build -o bin/$(PROJECT_NAME) examples/kv_events/online/main.go
+build: build-uds build-embedded ## Build both UDS-only and embedded binaries
+
+.PHONY: build-uds
+build-uds: check-go download-zmq ## Build without embedded tokenizers (no Python required)
+	@printf "\033[33;1m==== Building (UDS-only, no embedded tokenizers) ====\033[0m\n"
+	@go build ./pkg/...
+	@echo "✅ UDS-only build succeeded"
+
+.PHONY: build-embedded
+build-embedded: check-go install-python-deps download-zmq ## Build with embedded tokenizers
+	@printf "\033[33;1m==== Building application binary (with embedded tokenizers) ====\033[0m\n"
+	@go build -tags $(EMBEDDED_TAGS) -o bin/$(PROJECT_NAME) examples/kv_events/online/main.go
 	@echo "✅ Built examples/kv_events/online/main.go -> bin/$(PROJECT_NAME)"
 
 .PHONY:	image-build
