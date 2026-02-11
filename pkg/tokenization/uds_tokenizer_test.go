@@ -151,7 +151,7 @@ type UdsTokenizerTestSuite struct {
 func (s *UdsTokenizerTestSuite) SetupSuite() {
 	s.mockServer = newMockTokenizationServer()
 
-	tmpDir, err := os.MkdirTemp("/tmp", "tok-test-")
+	tmpDir, err := os.MkdirTemp("", "tok-test-")
 	require.NoError(s.T(), err)
 	s.socketPath = filepath.Join(tmpDir, "tokenizer-uds.sock")
 
