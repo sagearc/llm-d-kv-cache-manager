@@ -144,7 +144,7 @@ type UdsTokenizerTestSuite struct {
 	socketPath string
 	grpcServer *grpc.Server
 	listener   net.Listener
-	tokenizer  Tokenizer // Shared tokenizer for most tests
+	tokenizer  *UdsTokenizer // Shared tokenizer for most tests
 }
 
 // SetupSuite runs once before all tests in the suite.

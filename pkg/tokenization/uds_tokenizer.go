@@ -55,7 +55,7 @@ const (
 )
 
 // NewUdsTokenizer creates a new UDS-based tokenizer client with connection pooling.
-func NewUdsTokenizer(ctx context.Context, config *UdsTokenizerConfig, modelName string) (Tokenizer, error) {
+func NewUdsTokenizer(ctx context.Context, config *UdsTokenizerConfig, modelName string) (*UdsTokenizer, error) {
 	socketFile := config.SocketFile
 	if socketFile == "" {
 		socketFile = defaultSocketFile
