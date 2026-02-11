@@ -29,8 +29,6 @@ import (
 	types "github.com/llm-d/llm-d-kv-cache/pkg/tokenization/types"
 )
 
-const testModelName = "google-bert/bert-base-uncased"
-
 // MockTokenizer implements the Tokenizer interface for testing.
 type MockTokenizer struct {
 	mock.Mock
@@ -90,7 +88,7 @@ func TestPool_ProcessTask(t *testing.T) {
 	mockTokenizer := &MockTokenizer{}
 
 	pool := &Pool{
-		modelName: testModelName,
+		modelName: "test-model",
 		workers:   1,
 		tokenizer: mockTokenizer,
 	}
@@ -219,7 +217,7 @@ func TestPool_WorkerLoop(t *testing.T) {
 
 			tt.setupMocks(mockTokenizer)
 			pool := &Pool{
-				modelName: testModelName,
+				modelName: "test-model",
 				workers:   1,
 				queue:     workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[Task]()),
 				tokenizer: mockTokenizer,
