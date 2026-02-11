@@ -17,12 +17,12 @@ limitations under the License.
 package tokenization
 
 import (
-	preprocessing "github.com/llm-d/llm-d-kv-cache/pkg/preprocessing/chat_completions"
+	types "github.com/llm-d/llm-d-kv-cache/pkg/tokenization/types"
 )
 
 // Tokenizer interface defines the methods for tokenization.
 type Tokenizer interface {
-	RenderChat(*preprocessing.RenderChatRequest) ([]uint32, []preprocessing.Offset, error)
-	Render(string) ([]uint32, []preprocessing.Offset, error)
+	RenderChat(*types.RenderChatRequest) ([]uint32, []types.Offset, error)
+	Render(string) ([]uint32, []types.Offset, error)
 	Type() string
 }

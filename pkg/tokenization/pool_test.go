@@ -29,7 +29,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"k8s.io/client-go/util/workqueue"
 
-	preprocessing "github.com/llm-d/llm-d-kv-cache/pkg/preprocessing/chat_completions"
+	types "github.com/llm-d/llm-d-kv-cache/pkg/tokenization/types"
 )
 
 const (
@@ -49,7 +49,7 @@ type MockTokenizer struct {
 	mock.Mock
 }
 
-func (m *MockTokenizer) RenderChat(renderReq *preprocessing.RenderChatRequest) ([]uint32, []preprocessing.Offset, error) {
+func (m *MockTokenizer) RenderChat(renderReq *types.RenderChatRequest) ([]uint32, []types.Offset, error) {
 	args := m.Called(renderReq)
 	tokenIface := args.Get(0)
 	if tokenIface == nil {
@@ -63,14 +63,14 @@ func (m *MockTokenizer) RenderChat(renderReq *preprocessing.RenderChatRequest) (
 	if offsetIface == nil {
 		return nil, nil, args.Error(2)
 	}
-	offsets, ok := offsetIface.([]preprocessing.Offset)
+	offsets, ok := offsetIface.([]types.Offset)
 	if !ok {
-		panic("MockTokenizer.RenderChat: expected []preprocessing.Offset from mock, got unexpected type")
+		panic("MockTokenizer.RenderChat: expected []types.Offset from mock, got unexpected type")
 	}
 	return tokens, offsets, args.Error(2)
 }
 
-func (m *MockTokenizer) Render(prompt string) ([]uint32, []preprocessing.Offset, error) {
+func (m *MockTokenizer) Render(prompt string) ([]uint32, []types.Offset, error) {
 	args := m.Called(prompt)
 	tokenIface := args.Get(0)
 	if tokenIface == nil {
@@ -84,9 +84,9 @@ func (m *MockTokenizer) Render(prompt string) ([]uint32, []preprocessing.Offset,
 	if offsetIface == nil {
 		return nil, nil, args.Error(2)
 	}
-	offsets, ok := offsetIface.([]preprocessing.Offset)
+	offsets, ok := offsetIface.([]types.Offset)
 	if !ok {
-		panic("MockTokenizer.Render: expected []preprocessing.Offset from mock, got unexpected type")
+		panic("MockTokenizer.Render: expected []types.Offset from mock, got unexpected type")
 	}
 	return tokens, offsets, args.Error(2)
 }
@@ -120,7 +120,7 @@ func TestPool_ProcessTask(t *testing.T) {
 
 	// Setup specific mock return values
 	expectedTokens := []uint32{12345, 67890, 11111}
-	expectedOffsets := []preprocessing.Offset{{0, 5}, {6, 11}}
+	expectedOffsets := []types.Offset{{0, 5}, {6, 11}}
 
 	mockTokenizer.On("Render", task.Prompt).
 		Return(expectedTokens, expectedOffsets, nil)
@@ -143,7 +143,7 @@ func TestPool_WorkerLoop(t *testing.T) {
 		"successful task processing": {
 			setupMocks: func(mi *MockIndexer, mt *MockTokenizer) {
 				mt.On("Render", "test prompt").
-					Return([]uint32{1, 2, 3}, []preprocessing.Offset{{0, 4}}, nil)
+					Return([]uint32{1, 2, 3}, []types.Offset{{0, 4}}, nil)
 			},
 			genTasks: func() ([]Task, chan tokenizationResponse) {
 				return []Task{{Prompt: "test prompt"}}, nil
@@ -153,7 +153,7 @@ func TestPool_WorkerLoop(t *testing.T) {
 		"task with result channel": {
 			setupMocks: func(mi *MockIndexer, mt *MockTokenizer) {
 				mt.On("Render", "test with channel").
-					Return([]uint32{10, 20, 30}, []preprocessing.Offset{{0, 4}}, nil)
+					Return([]uint32{10, 20, 30}, []types.Offset{{0, 4}}, nil)
 			},
 			genTasks: func() ([]Task, chan tokenizationResponse) {
 				ch := make(chan tokenizationResponse, 1)
@@ -184,7 +184,7 @@ func TestPool_WorkerLoop(t *testing.T) {
 				for i := range 5 {
 					prompt := "prompt " + string(rune('a'+i))
 					tokens := []uint32{uint32(i), uint32(i + 1)} //nolint:gosec // test code
-					offsets := []preprocessing.Offset{{0, 6}}
+					offsets := []types.Offset{{0, 6}}
 
 					mt.On("Render", prompt).
 						Return(tokens, offsets, nil).Once()
@@ -208,7 +208,7 @@ func TestPool_WorkerLoop(t *testing.T) {
 			setupMocks: func(mi *MockIndexer, mt *MockTokenizer) {
 				// Mock will fail every time, causing retries
 				mt.On("Render", "failing prompt").Return(
-					[]uint32{}, []preprocessing.Offset{}, assert.AnError)
+					[]uint32{}, []types.Offset{}, assert.AnError)
 			},
 			genTasks: func() ([]Task, chan tokenizationResponse) {
 				ch := make(chan tokenizationResponse, 1)

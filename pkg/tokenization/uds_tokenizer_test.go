@@ -25,8 +25,8 @@ import (
 	"testing"
 
 	tokenizerpb "github.com/llm-d/llm-d-kv-cache/api/tokenizerpb"
-	preprocessing "github.com/llm-d/llm-d-kv-cache/pkg/preprocessing/chat_completions"
 	. "github.com/llm-d/llm-d-kv-cache/pkg/tokenization"
+	types "github.com/llm-d/llm-d-kv-cache/pkg/tokenization/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -255,14 +255,14 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Render() {
 	s.Assert().Equal(uint32('d'), tokens[10]) // 'd' at end = 100
 
 	// Verify offsets
-	s.Assert().Equal(preprocessing.Offset{0, 1}, offsets[0]) // 'h'
-	s.Assert().Equal(preprocessing.Offset{5, 6}, offsets[5]) // space
+	s.Assert().Equal(types.Offset{0, 1}, offsets[0]) // 'h'
+	s.Assert().Equal(types.Offset{5, 6}, offsets[5]) // space
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_RenderChat() {
 	// Test RenderChat
-	renderReq := &preprocessing.RenderChatRequest{
-		Conversation: []preprocessing.Conversation{
+	renderReq := &types.RenderChatRequest{
+		Conversation: []types.Conversation{
 			{Role: "user", Content: "Hello"},
 			{Role: "assistant", Content: "Hi there"},
 		},
@@ -294,8 +294,8 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_TokenizeError() {
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_ChatTemplateError() {
 	s.mockServer.chatError = true
 
-	renderReq := &preprocessing.RenderChatRequest{
-		Conversation: []preprocessing.Conversation{
+	renderReq := &types.RenderChatRequest{
+		Conversation: []types.Conversation{
 			{Role: "user", Content: "Hello"},
 		},
 	}

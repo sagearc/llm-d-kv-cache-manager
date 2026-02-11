@@ -19,7 +19,7 @@ package prefixstore
 import (
 	"sync"
 
-	preprocessing "github.com/llm-d/llm-d-kv-cache/pkg/preprocessing/chat_completions"
+	types "github.com/llm-d/llm-d-kv-cache/pkg/tokenization/types"
 )
 
 // containedTokenNode represents a node in the character-based Trie.
@@ -57,7 +57,7 @@ var _ Indexer = &TrieTokenStore{}
 // The function assumes tokens and offsets are of the same length.
 // The function assumes that tokens will not be mutated after the call.
 func (t *TrieTokenStore) AddTokenization(prompt string, tokens []uint32,
-	offsets []preprocessing.Offset,
+	offsets []types.Offset,
 ) error {
 	if prompt == "" || len(tokens) == 0 || len(tokens) != len(offsets) {
 		return nil
@@ -82,7 +82,7 @@ func NewContainedTokenTrie() *TrieTokenStore {
 // It iterates through characters and determines the last contained token at
 // each step.
 // Assumes the caller holds the Write Lock.
-func (t *TrieTokenStore) addFullTokenization(prompt string, tokens []uint32, offsets []preprocessing.Offset) {
+func (t *TrieTokenStore) addFullTokenization(prompt string, tokens []uint32, offsets []types.Offset) {
 	node := t.root
 	var lastFoundK int
 	if len(tokens) > 0 {

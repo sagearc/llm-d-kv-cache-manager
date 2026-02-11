@@ -23,7 +23,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	lru "github.com/hashicorp/golang-lru/v2"
-	preprocessing "github.com/llm-d/llm-d-kv-cache/pkg/preprocessing/chat_completions"
+	types "github.com/llm-d/llm-d-kv-cache/pkg/tokenization/types"
 )
 
 const (
@@ -91,7 +91,7 @@ func NewLRUTokenStore(config *Config) (Indexer, error) {
 // The function assumes tokens and offsets are of the same length.
 // The function assumes that tokens will not be mutated after the call.
 func (c *LRUTokenStore) AddTokenization(prompt string, tokens []uint32,
-	offsets []preprocessing.Offset,
+	offsets []types.Offset,
 ) error {
 	if prompt == "" || len(tokens) == 0 {
 		return nil

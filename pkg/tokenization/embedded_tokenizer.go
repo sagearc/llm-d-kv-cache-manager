@@ -29,6 +29,7 @@ import (
 
 	"github.com/llm-d/llm-d-kv-cache/pkg/kvcache/metrics"
 	preprocessing "github.com/llm-d/llm-d-kv-cache/pkg/preprocessing/chat_completions"
+	types "github.com/llm-d/llm-d-kv-cache/pkg/tokenization/types"
 )
 
 // HFTokenizerConfig holds the configuration for the HuggingFace tokenizer.
@@ -335,8 +336,8 @@ func NewCachedLocalTokenizer(ctx context.Context, modelName string, config Local
 }
 
 func (t *CachedTokenizer) RenderChat(
-	req *preprocessing.RenderChatRequest,
-) ([]uint32, []preprocessing.Offset, error) {
+	req *types.RenderChatRequest,
+) ([]uint32, []types.Offset, error) {
 	ctx := context.TODO()
 
 	req.Key = t.tokenizerCacheKey
@@ -349,10 +350,10 @@ func (t *CachedTokenizer) RenderChat(
 }
 
 // Render tokenizes the given prompt and returns token IDs with offset mappings.
-func (t *CachedTokenizer) Render(prompt string) ([]uint32, []preprocessing.Offset, error) {
+func (t *CachedTokenizer) Render(prompt string) ([]uint32, []types.Offset, error) {
 	ctx := context.TODO()
 
-	tokens, offsets, err := t.chatTemplateRenderer.Render(ctx, &preprocessing.RenderRequest{
+	tokens, offsets, err := t.chatTemplateRenderer.Render(ctx, &types.RenderRequest{
 		Key:              t.tokenizerCacheKey,
 		Text:             prompt,
 		AddSpecialTokens: true,
@@ -407,8 +408,8 @@ type CompositeTokenizer struct {
 }
 
 func (c *CompositeTokenizer) RenderChat(
-	req *preprocessing.RenderChatRequest,
-) ([]uint32, []preprocessing.Offset, error) {
+	req *types.RenderChatRequest,
+) ([]uint32, []types.Offset, error) {
 	var rErr error
 	for _, tokenizer := range c.Tokenizers {
 		copiedReq, err := req.DeepCopy()
@@ -431,7 +432,7 @@ func (c *CompositeTokenizer) RenderChat(
 
 // Render tokenizes the given prompt and returns token IDs with offset mappings.
 func (c *CompositeTokenizer) Render(prompt string,
-) ([]uint32, []preprocessing.Offset, error) {
+) ([]uint32, []types.Offset, error) {
 	var rErr error
 	for _, tokenizer := range c.Tokenizers {
 		start := time.Now()
