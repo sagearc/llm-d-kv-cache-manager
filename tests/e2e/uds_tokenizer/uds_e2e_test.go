@@ -50,7 +50,11 @@ func (s *UDSTokenizerSuite) TestTokenize() {
 
 // TestTokenizeWithSpecialTokens verifies that Encode(prompt, true) includes special tokens
 // and Encode(prompt, false) does not.
+// Uses BERT model which always adds [CLS] and [SEP] tokens for strict greater-than comparison.
 func (s *UDSTokenizerSuite) TestTokenizeWithSpecialTokens() {
+	// Switch to BERT model which adds [CLS] and [SEP] special tokens
+	s.switchTokenizer("google-bert/bert-base-uncased")
+
 	prompt := "Hello world"
 
 	tokensWithSpecial, _, err := s.tokenizer.Encode(prompt, true)
@@ -61,15 +65,18 @@ func (s *UDSTokenizerSuite) TestTokenizeWithSpecialTokens() {
 	s.Require().NoError(err)
 	s.Require().NotEmpty(tokensWithoutSpecial)
 
-	// IBM Granite adds special tokens at the start and end when add_special_tokens=true.
-	// With special tokens the sequence should be longer or equal (depending on model).
-	s.Require().GreaterOrEqual(len(tokensWithSpecial), len(tokensWithoutSpecial),
-		"encoding with special tokens should produce at least as many tokens")
+	// BERT adds [CLS] at the start and [SEP] at the end when add_special_tokens=true.
+	// So tokens with special tokens should always be strictly greater.
+	s.Require().Greater(len(tokensWithSpecial), len(tokensWithoutSpecial),
+		"encoding with special tokens should produce more tokens (BERT adds [CLS] and [SEP])")
 
-	// Verify the known BERT special token IDs are present.
-	s.Require().Equal(uint32(0), tokensWithSpecial[0], "first token should be [CLS] (101)")
-	s.Require().Equal(uint32(1), tokensWithSpecial[len(tokensWithSpecial)-1],
-		"last token should be [SEP] (102)")
+	// Verify BERT-specific special token IDs
+	bosTokenID := uint32(101) // [CLS]
+	eosTokenID := uint32(102) // [SEP]
+	s.Require().Equal(bosTokenID, tokensWithSpecial[0], "first token should be [CLS] (101)")
+	s.Require().Equal(eosTokenID, tokensWithSpecial[len(tokensWithSpecial)-1], "last token should be [SEP] (102)")
+
+	s.T().Logf("Tokens with special: %d, without special: %d", len(tokensWithSpecial), len(tokensWithoutSpecial))
 }
 
 // TestRenderChatTemplate tests rendering a multi-turn conversation via the
