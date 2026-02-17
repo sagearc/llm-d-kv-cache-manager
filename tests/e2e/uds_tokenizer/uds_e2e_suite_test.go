@@ -23,12 +23,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
 	"github.com/go-logr/logr/testr"
 	"github.com/stretchr/testify/suite"
 	"github.com/testcontainers/testcontainers-go"
@@ -42,7 +40,7 @@ import (
 )
 
 const (
-	defaultModelName = "test-model"
+	defaultModelName = "ibm-granite/granite-3.1-8b-instruct"
 	healthPort       = "8082/tcp"
 	grpcPort         = "50051/tcp"
 	//nolint:gosec // This is an environment variable name, not a credential
@@ -55,9 +53,8 @@ type UDSTokenizerSuite struct {
 	suite.Suite
 
 	// Suite-level: container and temp dir (shared across all tests)
-	container       *testcontainers.DockerContainer
-	testdataHostDir string // absolute path to testdata directory on the host
-	grpcAddress     string // host:port for gRPC connection
+	container   *testcontainers.DockerContainer
+	grpcAddress string // host:port for gRPC connection
 
 	config               *kvcache.Config
 	tokenProcessorConfig *kvblock.TokenProcessorConfig
@@ -75,11 +72,6 @@ func (s *UDSTokenizerSuite) SetupSuite() {
 	s.Require().NotEmpty(imageName, "%s must be set (run 'make e2e-test-uds')", envTokenizerImage)
 	s.T().Logf("Using UDS tokenizer image: %s", imageName)
 
-	testdataDir, err := filepath.Abs(filepath.Join("..", "redis_mock", "testdata"))
-	s.Require().NoError(err)
-	s.Require().DirExists(testdataDir, "testdata directory must exist")
-	s.testdataHostDir = testdataDir
-
 	s.container, s.grpcAddress = s.launchContainer(imageName)
 	s.T().Logf("TCP tokenizer container started; gRPC at %s", s.grpcAddress)
 }
@@ -94,13 +86,6 @@ func (s *UDSTokenizerSuite) launchContainer(imageName string) (*testcontainers.D
 		}),
 		testcontainers.WithHostConfigModifier(func(hc *container.HostConfig) {
 			hc.AutoRemove = true
-			hc.Mounts = []mount.Mount{
-				{
-					Type:   mount.TypeBind,
-					Source: s.testdataHostDir,
-					Target: "/models",
-				},
-			}
 		}),
 		testcontainers.WithWaitStrategyAndDeadline(120*time.Second,
 			wait.ForHTTP("/health").WithPort(healthPort),
@@ -197,8 +182,8 @@ func (s *UDSTokenizerSuite) addEntriesToIndex(
 	s.Require().NoError(err)
 }
 
-// switchTokenizerModel creates a new UDS tokenizer for a different model and updates the suite.
-func (s *UDSTokenizerSuite) switchTokenizerModel(modelName string) {
+// switchTokenizer creates a new UDS tokenizer for a different model and updates the suite.
+func (s *UDSTokenizerSuite) switchTokenizer(modelName string) {
 	udsTokenizer, err := tokenization.NewUdsTokenizer(
 		s.T().Context(),
 		&tokenization.UdsTokenizerConfig{
