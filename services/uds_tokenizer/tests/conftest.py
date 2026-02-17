@@ -20,7 +20,6 @@ import tempfile
 
 import grpc
 import pytest
-from pytest import TempPathFactory
 
 import tokenizerpb.tokenizer_pb2 as tokenizer_pb2
 import tokenizerpb.tokenizer_pb2_grpc as tokenizer_pb2_grpc
