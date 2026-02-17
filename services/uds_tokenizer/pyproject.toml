@@ -26,3 +26,9 @@ test = [
     "pytest-timeout>=2.1.0",
     "requests>=2.25.0",
 ]
+
+[tool.setuptools]
+py-modules = ["tokenizer_grpc_service", "run_grpc_server"]
+
+[tool.setuptools.packages.find]
+include = ["tokenizer_service*", "tokenizerpb*", "utils*"]

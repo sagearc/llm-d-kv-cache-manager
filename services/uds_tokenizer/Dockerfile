@@ -22,9 +22,9 @@ ARG BUILDPLATFORM
 # Set working directory
 WORKDIR /app
 
-# Copy dependencies and install them
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy project metadata and install dependencies
+COPY pyproject.toml /app/pyproject.toml
+RUN pip install --no-cache-dir .
 
 # Runtime stage
 FROM --platform=$TARGETPLATFORM python:3.10-slim
@@ -41,7 +41,6 @@ COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
 # Copy project files into the image
 COPY run_grpc_server.py /app/
-COPY requirements.txt /app/requirements.txt
 COPY tokenizer_grpc_service.py /app/tokenizer_grpc_service.py
 COPY models/ /app/models/
 COPY utils/ /app/utils/
