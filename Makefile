@@ -236,6 +236,7 @@ e2e-test-uds: check-go download-zmq image-build-uds ## Run UDS tokenizer e2e tes
 		echo "ERROR: DOCKER_HOST could not be determined. Ensure Docker or Podman is installed and a context is configured."; \
 		exit 1; \
 	fi; \
+	DOCKER_HOST=$$DOCKER_HOST \
 	TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
 	UDS_TOKENIZER_IMAGE=$(UDS_TOKENIZER_IMAGE) \
 	go test -v -count=1 -timeout 10m ./tests/e2e/uds_tokenizer/...
