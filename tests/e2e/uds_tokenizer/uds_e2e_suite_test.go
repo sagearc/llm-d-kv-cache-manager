@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	defaultModelName = "ibm-granite/granite-3.3-8b-instruct"
+	defaultModelName = "ibm-granite/granite-3.1-8b-instruct"
 	healthPort       = "8082/tcp"
 	grpcPort         = "50051/tcp"
 	//nolint:gosec // This is an environment variable name, not a credential
@@ -76,6 +76,7 @@ func (s *UDSTokenizerSuite) SetupSuite() {
 	s.T().Logf("TCP tokenizer container started; gRPC at %s", s.grpcAddress)
 }
 
+//nolint:gocritic // nonamedreturns linter takes precedence
 func (s *UDSTokenizerSuite) launchContainer(imageName string) (*testcontainers.DockerContainer, string) {
 	ctx := context.Background()
 
