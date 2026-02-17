@@ -28,6 +28,7 @@ import grpc
 import pytest
 
 import tokenizerpb.tokenizer_pb2 as tokenizer_pb2
+from tokenizer_service.tokenizer import TokenizerService
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +99,7 @@ class TestTokenize:
         assert resp.success
         assert len(resp.input_ids) > 0
 
-    def test_tokenize_returns_offset_pairs(self, grpc_stub, test_model):
+    def test_tokenize_returns_offset_pairs(self, grpc_stub, test_model, tokenizer_service: TokenizerService):
         """Tokenize returns offset_pairs alongside token IDs."""
         grpc_stub.InitializeTokenizer(
             tokenizer_pb2.InitializeTokenizerRequest(model_name=test_model)
@@ -113,8 +114,13 @@ class TestTokenize:
         assert resp.success
         # offset_pairs is a flat list of [start, end, start, end, ...]
         assert len(resp.offset_pairs) == 2 * len(resp.input_ids)
+        
+        # Verify token count matches tokenizer
+        tokenizer, _ = tokenizer_service.get_tokenizer_for_model(test_model)
+        expected_tokens = tokenizer.encode("Hello world", add_special_tokens=True)
+        assert list(resp.input_ids) == expected_tokens
 
-    def test_tokenize_without_special_tokens(self, grpc_stub):
+    def test_tokenize_without_special_tokens(self, grpc_stub, tokenizer_service: TokenizerService):
         """Tokenize with add_special_tokens=False omits special tokens."""
 
         model_name = "google-bert/bert-base-uncased"
@@ -139,9 +145,19 @@ class TestTokenize:
         assert with_special.success and without_special.success
         # With special tokens should produce > tokens as without.
         assert len(with_special.input_ids) > len(without_special.input_ids)
+        
+        # Verify special tokens using actual tokenizer
+        tokenizer, _ = tokenizer_service.get_tokenizer_for_model(model_name)
+
+        # BERT adds [CLS] at start and [SEP] at end
+        assert with_special.input_ids[0] == tokenizer.cls_token_id
+        assert with_special.input_ids[-1] == tokenizer.sep_token_id
+
+        # Without special tokens should not have [CLS] or [SEP]
+        assert without_special.input_ids[0] != tokenizer.cls_token_id
+        assert without_special.input_ids[-1] != tokenizer.sep_token_id
 
     def test_tokenize_empty_input(self, grpc_stub, test_model):
-        """Tokenize an empty input."""
         grpc_stub.InitializeTokenizer(
             tokenizer_pb2.InitializeTokenizerRequest(model_name=test_model)
         )
@@ -171,20 +187,27 @@ class TestTokenize:
         assert resp.success
         assert len(resp.input_ids) > 100  # Should have many tokens.
 
-    def test_tokenize_special_characters(self, grpc_stub, test_model):
+    def test_tokenize_special_characters(self, grpc_stub, test_model, tokenizer_service: TokenizerService):
         """Tokenize handles special / unicode characters."""
         grpc_stub.InitializeTokenizer(
             tokenizer_pb2.InitializeTokenizerRequest(model_name=test_model)
         )
+        test_input = "Hello 你好 مرحبا 🌍 <|special|>"
         resp = grpc_stub.Tokenize(
             tokenizer_pb2.TokenizeRequest(
-                input="Hello 你好 مرحبا 🌍 <|special|>",
+                input=test_input,
                 model_name=test_model,
                 add_special_tokens=True,
             )
         )
         assert resp.success
         assert len(resp.input_ids) > 0
+        
+        # Verify tokenization matches actual tokenizer
+        tokenizer, _ = tokenizer_service.get_tokenizer_for_model(test_model)
+
+        expected_tokens = tokenizer.encode(test_input, add_special_tokens=True)
+        assert list(resp.input_ids) == expected_tokens
 
     def test_tokenize_uninitialized_model(self, grpc_stub):
         """Tokenize for a model that was never initialized returns an error."""

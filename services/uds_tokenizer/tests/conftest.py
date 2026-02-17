@@ -51,25 +51,20 @@ def uds_socket_path() -> Iterator[str]:
 
 
 @pytest.fixture(scope="session")
-def grpc_server(uds_socket_path: str) -> Iterator[grpc.Server]:
-    """Start the gRPC tokenizer server in-process for the test session.
-
-    Reuses the same ``TokenizerService`` and ``create_grpc_server`` used by
-    ``run_grpc_server.py``, but without signal handlers or the probe HTTP
-    server — just the gRPC server on a unique UDS path.
-    """
-    tokenizer_service = TokenizerService()
+def tokenizer_service(uds_socket_path: str) -> Iterator[TokenizerService]:
+    """Provide the TokenizerService instance used by the gRPC server."""
+    service = TokenizerService()
     thread_pool = get_thread_pool()
-    server = create_grpc_server(tokenizer_service, uds_socket_path, thread_pool)
+    server = create_grpc_server(service, uds_socket_path, thread_pool)
     server.start()
 
-    yield server
+    yield service
 
     server.stop(grace=5).wait(timeout=10)
 
 
 @pytest.fixture(scope="session")
-def grpc_channel(grpc_server: grpc.Server, uds_socket_path: str) -> Iterator[grpc.Channel]:
+def grpc_channel(tokenizer_service: TokenizerService, uds_socket_path: str) -> Iterator[grpc.Channel]:
     """Create a gRPC channel connected to the test server."""
     channel = grpc.insecure_channel(f"unix://{uds_socket_path}")
     yield channel
