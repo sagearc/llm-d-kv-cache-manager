@@ -101,7 +101,7 @@ func (s *UDSTokenizerSuite) TestRenderChatTemplate() {
 
 // TestRenderChatTemplateLlama3 switches to the local-llama3 model and renders a conversation.
 func (s *UDSTokenizerSuite) TestRenderChatTemplateLlama3() {
-	s.switchTokenizerModel("/models/local-llama3", "local-llama3")
+	s.switchTokenizerModel("local-llama3")
 
 	conversation := []types.Conversation{
 		{Role: "user", Content: "What is the capital of France?"},
@@ -129,7 +129,7 @@ func (s *UDSTokenizerSuite) TestInitializeBadModel() {
 			SocketFile: s.grpcAddress,
 			UseTCP:     true,
 		},
-		"/models/non-existent-model",
+		"non-existent-model",
 	)
 	s.Require().Error(err, "initializing with a non-existent model should fail")
 	s.T().Logf("Expected error for bad model: %v", err)

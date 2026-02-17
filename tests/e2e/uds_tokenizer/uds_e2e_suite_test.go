@@ -42,7 +42,7 @@ import (
 )
 
 const (
-	defaultModelName = "/models/test-model" // Full path to model in container
+	defaultModelName = "test-model"
 	healthPort       = "8082/tcp"
 	grpcPort         = "50051/tcp"
 	//nolint:gosec // This is an environment variable name, not a credential
@@ -198,14 +198,14 @@ func (s *UDSTokenizerSuite) addEntriesToIndex(
 }
 
 // switchTokenizerModel creates a new UDS tokenizer for a different model and updates the suite.
-func (s *UDSTokenizerSuite) switchTokenizerModel(modelPath, modelName string) {
+func (s *UDSTokenizerSuite) switchTokenizerModel(modelName string) {
 	udsTokenizer, err := tokenization.NewUdsTokenizer(
 		s.T().Context(),
 		&tokenization.UdsTokenizerConfig{
 			SocketFile: s.grpcAddress,
 			UseTCP:     true,
 		},
-		modelPath,
+		modelName,
 	)
 	s.Require().NoError(err, "failed to switch to model %s", modelName)
 
