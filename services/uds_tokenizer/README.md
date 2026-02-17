@@ -224,13 +224,6 @@ All dependencies (runtime and test) are managed via `pyproject.toml`.
 pip install ".[test]"
 ```
 
-### Unit Tests
-
-Run unit tests with mocks (no service or model needed):
-```bash
-pytest tests/test_tokenizer_unit.py -v
-```
-
 ### Integration Tests
 
 Integration tests start an in-process gRPC server automatically — no manual server management required.
@@ -250,9 +243,7 @@ python -m pytest tests/ -v
 
 From the repository root:
 ```bash
-make uds-tokenizer-test              # run all (unit + integration)
-make uds-tokenizer-unit-test         # unit tests only
-make uds-tokenizer-integration-test  # integration tests only
+make uds-tokenizer-service-test
 ```
 
 ## Kubernetes Deployment
@@ -296,7 +287,6 @@ See [models/README.md](models/README.md) for detailed information about model ca
 │   ├── __init__.py
 │   ├── conftest.py              # Shared fixtures (in-process gRPC server)
 │   ├── test_integration.py      # Integration tests (pytest)
-│   └── test_tokenizer_unit.py   # Unit tests
 ├── models/                  # Model files (downloaded automatically)
 └── README.md                # This file
 ```
