@@ -61,5 +61,10 @@ RUN mkdir -p /.cache && chown -R 65532:65532 /.cache
 # Switch to non-root user
 USER 65532:65532
 
+# Expose ports
+EXPOSE 8082
+# Port 50051 is for testing only (when GRPC_PORT is set)
+EXPOSE 50051
+
 # Startup command: run direct gRPC server
 CMD ["python", "/app/run_grpc_server.py"]

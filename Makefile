@@ -16,6 +16,7 @@ UNAME_S := $(shell uname -s)
 TOOLS_DIR := $(shell pwd)/hack/tools
 CONTAINER_TOOL := $(shell { command -v docker >/dev/null 2>&1 && echo docker; } || { command -v podman >/dev/null 2>&1 && echo podman; } || echo "")
 BUILDER := $(shell command -v buildah >/dev/null 2>&1 && echo buildah || echo $(CONTAINER_TOOL))
+UDS_TOKENIZER_IMAGE ?= llm-d-uds-tokenizer:e2e-test
 
 # go source files
 SRC = $(shell find . -type f -name '*.go')
@@ -218,6 +219,23 @@ unit-test-embedded: install-python-deps download-zmq ## Run unit tests with embe
 e2e-test: download-local-llama3 install-python-deps download-zmq ## Run end-to-end tests (requires embedded tokenizers)
 	@printf "\033[33;1m==== Running e2e tests ====\033[0m\n"
 	@go test -v -tags $(EMBEDDED_TAGS) ./tests/...
+
+.PHONY: image-build-uds
+image-build-uds: check-container-tool ## Build the UDS tokenizer container image
+	@printf "\033[33;1m==== Building UDS tokenizer image $(UDS_TOKENIZER_IMAGE) ====\033[0m\n"
+	$(CONTAINER_TOOL) build -t $(UDS_TOKENIZER_IMAGE) services/uds_tokenizer
+
+.PHONY: e2e-test-uds
+e2e-test-uds: image-build-uds ## Run UDS tokenizer e2e tests (requires Docker)
+	@printf "\033[33;1m==== Running UDS tokenizer e2e tests ====\033[0m\n"
+	@DOCKER_HOST=$$($(CONTAINER_TOOL) context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null); \
+	if [ -z "$$DOCKER_HOST" ]; then \
+		echo "ERROR: DOCKER_HOST could not be determined. Ensure Docker or Podman is installed and a context is configured."; \
+		exit 1; \
+	fi; \
+	TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+	UDS_TOKENIZER_IMAGE=$(UDS_TOKENIZER_IMAGE) \
+	go test -v -count=1 -timeout 10m ./tests/e2e/uds_tokenizer/...
 
 .PHONY: bench
 bench: install-python-deps download-zmq ## Run benchmarks (requires embedded tokenizers)
