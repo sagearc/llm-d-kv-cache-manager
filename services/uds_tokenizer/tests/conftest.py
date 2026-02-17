@@ -58,14 +58,28 @@ def tokenizer_service(uds_socket_path: str) -> Iterator[TokenizerService]:
 
     yield service
 
-    server.stop(grace=5).wait(timeout=10)
+    # Graceful shutdown with matching timeout
+    stop_future = server.stop(grace=5)
+    stop_future.wait(timeout=5)
 
 
 @pytest.fixture(scope="session")
 def grpc_channel(tokenizer_service: TokenizerService, uds_socket_path: str) -> Iterator[grpc.Channel]:
-    """Create a gRPC channel connected to the test server."""
+    """Create a gRPC channel connected to the test server.
+    
+    Uses wait_for_ready to automatically retry connection until server is ready.
+    """
     channel = grpc.insecure_channel(f"unix://{uds_socket_path}")
+    
+    # Verify channel can connect by waiting for it to be ready
+    try:
+        grpc.channel_ready_future(channel).result(timeout=10.0)
+    except grpc.FutureTimeoutError:
+        channel.close()
+        raise RuntimeError(f"gRPC channel to {uds_socket_path} not ready within 10s")
+    
     yield channel
+
     channel.close()
 
 
