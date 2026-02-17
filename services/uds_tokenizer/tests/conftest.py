@@ -21,7 +21,6 @@ import tempfile
 import grpc
 import pytest
 
-import tokenizerpb.tokenizer_pb2 as tokenizer_pb2
 import tokenizerpb.tokenizer_pb2_grpc as tokenizer_pb2_grpc
 from tokenizer_service.tokenizer import TokenizerService
 from tokenizer_grpc_service import create_grpc_server
