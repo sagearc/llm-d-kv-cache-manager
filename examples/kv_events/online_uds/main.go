@@ -110,9 +110,10 @@ func run(ctx context.Context) error {
 	<-ctx.Done()
 	logger.Info("Shutting down...")
 
+	// ctx is already cancelled here; shutdown requires a fresh context.
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
-	return httpServer.Shutdown(shutdownCtx)
+	return httpServer.Shutdown(shutdownCtx) //nolint:contextcheck // ctx is already cancelled; shutdown needs a fresh context
 }
 
 func setupKVCacheIndexer(ctx context.Context) (*kvcache.Indexer, error) {
