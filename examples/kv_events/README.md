@@ -133,9 +133,11 @@ The `online_uds` example is the same as `online` but uses the UDS tokenizer side
 
 ### Prerequisites
 
-1. Start the UDS tokenizer sidecar:
+1. Start the UDS tokenizer sidecar. The indexer expects the socket at `/tmp/tokenizer/tokenizer-uds.socket` by default:
 ```bash
-docker run --rm --network host uds-tokenizer python run_grpc_server.py
+docker run --rm --network host \
+  -v /tmp/tokenizer:/tmp/tokenizer \
+  uds-tokenizer python run_grpc_server.py
 ```
 
 2. Start a vLLM instance with ZMQ KV events enabled (pointing at `tcp://localhost:5557`).

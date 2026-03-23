@@ -192,7 +192,11 @@ func startHTTPServer(ctx context.Context, indexer *kvcache.Indexer) *http.Server
 			Prompt string `json:"prompt"`
 			Model  string `json:"model"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Prompt == "" {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if req.Prompt == "" {
 			http.Error(w, "field 'prompt' required", http.StatusBadRequest)
 			return
 		}
