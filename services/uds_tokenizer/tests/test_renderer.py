@@ -117,7 +117,10 @@ class TestRenderChatCompletionMM:
 
     def test_mm_features_populated(self, grpc_stub, mm_test_model, llmd_logo_data_url):
         """Image input should populate mm_hashes and mm_placeholders in features."""
-        request_json = _chat_request_json(mm_test_model, [_image_message("Describe this image.", url=llmd_logo_data_url)])
+        request_json = _chat_request_json(
+            mm_test_model,
+            [_image_message("Describe this image.", url=llmd_logo_data_url)],
+        )
         resp = grpc_stub.RenderChatCompletion(
             tokenizer_pb2.RenderChatCompletionRequest(
                 request_json=request_json,
@@ -130,14 +133,23 @@ class TestRenderChatCompletionMM:
 
     def test_mm_deterministic(self, grpc_stub, mm_test_model, llmd_logo_data_url):
         """Same image via base64 and HTTP URL produces identical token IDs and mm_hashes."""
-        b64_json = _chat_request_json(mm_test_model, [_image_message("Determinism check.", url=llmd_logo_data_url)])
-        url_json = _chat_request_json(mm_test_model, [_image_message("Determinism check.", url=_LLMD_LOGO_URL)])
+        b64_json = _chat_request_json(
+            mm_test_model,
+            [_image_message("Determinism check.", url=llmd_logo_data_url)],
+        )
+        url_json = _chat_request_json(
+            mm_test_model, [_image_message("Determinism check.", url=_LLMD_LOGO_URL)]
+        )
 
         b64_resp = grpc_stub.RenderChatCompletion(
-            tokenizer_pb2.RenderChatCompletionRequest(request_json=b64_json, model_name=mm_test_model)
+            tokenizer_pb2.RenderChatCompletionRequest(
+                request_json=b64_json, model_name=mm_test_model
+            )
         )
         url_resp = grpc_stub.RenderChatCompletion(
-            tokenizer_pb2.RenderChatCompletionRequest(request_json=url_json, model_name=mm_test_model)
+            tokenizer_pb2.RenderChatCompletionRequest(
+                request_json=url_json, model_name=mm_test_model
+            )
         )
         assert list(b64_resp.token_ids) == list(url_resp.token_ids)
         assert dict(b64_resp.features.mm_hashes) == dict(url_resp.features.mm_hashes)
