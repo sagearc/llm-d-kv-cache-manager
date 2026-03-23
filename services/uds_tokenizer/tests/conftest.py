@@ -46,15 +46,11 @@ def mm_test_model() -> str:
     return os.getenv("MM_TEST_MODEL", DEFAULT_MM_TEST_MODEL)
 
 
-_TESTDATA = Path(__file__).parent / "testdata"
-
-
 @pytest.fixture(scope="session")
 def llmd_logo_data_url() -> str:
     """Return the llm-d logo as a base64 data URL (loaded from local testdata)."""
-    data = (_TESTDATA / "llmd_logo.png").read_bytes()
-    b64 = base64.b64encode(data).decode()
-    return f"data:image/png;base64,{b64}"
+    data = (Path(__file__).parent / "testdata" / "llmd_logo.png").read_bytes()
+    return f"data:image/png;base64,{base64.b64encode(data).decode()}"
 
 
 @pytest.fixture(scope="session")
