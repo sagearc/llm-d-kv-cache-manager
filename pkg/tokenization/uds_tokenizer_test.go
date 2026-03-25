@@ -104,36 +104,59 @@ func (m *mockTokenizationServer) Tokenize(
 	}, nil
 }
 
-func (m *mockTokenizationServer) RenderChatTemplate(
-	ctx context.Context,
-	req *tokenizerpb.ChatTemplateRequest,
-) (*tokenizerpb.ChatTemplateResponse, error) {
+func (m *mockTokenizationServer) RenderChatCompletion(
+	_ context.Context,
+	req *tokenizerpb.RenderChatCompletionRequest,
+) (*tokenizerpb.RenderChatCompletionResponse, error) {
 	if m.chatError {
-		return &tokenizerpb.ChatTemplateResponse{
+		return &tokenizerpb.RenderChatCompletionResponse{
 			Success:      false,
-			ErrorMessage: "mock chat template error",
+			ErrorMessage: "mock render chat completion error",
 		}, nil
 	}
 
-	// Check if model was initialized (matches real service behavior)
-	if !m.initialized[req.ModelName] {
-		return &tokenizerpb.ChatTemplateResponse{
-			Success:      false,
-			ErrorMessage: fmt.Sprintf("model %s not initialized", req.ModelName),
-		}, nil
-	}
-
-	// Mock chat template rendering by concatenating messages
-	rendered := ""
-	for _, turn := range req.ConversationTurns {
-		for _, msg := range turn.Messages {
-			rendered += fmt.Sprintf("%s: %s\n", msg.Role, msg.GetText())
+	// Produce fake token IDs from native proto message content.
+	var tokens []uint32
+	for _, msg := range req.Messages {
+		for _, r := range msg.GetText() {
+			tokens = append(tokens, uint32(r))
 		}
 	}
 
-	return &tokenizerpb.ChatTemplateResponse{
-		RenderedPrompt: rendered,
-		Success:        true,
+	return &tokenizerpb.RenderChatCompletionResponse{
+		RequestId: "mock-request-id",
+		TokenIds:  tokens,
+		Success:   true,
+	}, nil
+}
+
+func (m *mockTokenizationServer) RenderCompletion(
+	_ context.Context,
+	req *tokenizerpb.RenderCompletionRequest,
+) (*tokenizerpb.RenderCompletionResponse, error) {
+	if m.tokenizeError {
+		return &tokenizerpb.RenderCompletionResponse{
+			Success:      false,
+			ErrorMessage: "mock render completion error",
+		}, nil
+	}
+
+	items := make([]*tokenizerpb.RenderChatCompletionResponse, 0, len(req.Prompts))
+	for _, prompt := range req.Prompts {
+		tokens := make([]uint32, 0, len(prompt))
+		for _, r := range prompt {
+			tokens = append(tokens, uint32(r))
+		}
+		items = append(items, &tokenizerpb.RenderChatCompletionResponse{
+			RequestId: "mock-request-id",
+			TokenIds:  tokens,
+			Success:   true,
+		})
+	}
+
+	return &tokenizerpb.RenderCompletionResponse{
+		Items:   items,
+		Success: true,
 	}, nil
 }
 
@@ -269,27 +292,19 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_ModelNotInMap() {
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Render() {
-	// Test Render - character-based tokenization
 	input := "hello world"
 	tokens, offsets, err := s.tokenizer.Render(input)
 	s.Require().NoError(err)
-
-	// Each character becomes a token
 	s.Assert().Equal(len([]rune(input)), len(tokens))
-	s.Assert().Equal(len([]rune(input)), len(offsets))
+	s.Assert().Nil(offsets, "RenderCompletion does not return character offsets")
 
-	// Verify specific characters
-	s.Assert().Equal(uint32('h'), tokens[0])  // 'h' = 104
-	s.Assert().Equal(uint32(' '), tokens[5])  // space at position 5 = 32
-	s.Assert().Equal(uint32('d'), tokens[10]) // 'd' at end = 100
-
-	// Verify offsets
-	s.Assert().Equal(types.Offset{0, 1}, offsets[0]) // 'h'
-	s.Assert().Equal(types.Offset{5, 6}, offsets[5]) // space
+	// Verify specific characters (mock converts runes to token IDs)
+	s.Assert().Equal(uint32('h'), tokens[0])
+	s.Assert().Equal(uint32(' '), tokens[5])
+	s.Assert().Equal(uint32('d'), tokens[10])
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_RenderChat() {
-	// Test RenderChat
 	renderReq := &types.RenderChatRequest{
 		Conversation: []types.Conversation{
 			{Role: "user", Content: types.Content{Raw: "Hello"}},
@@ -305,7 +320,7 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_RenderChat() {
 	tokens, offsets, err := s.tokenizer.RenderChat(renderReq)
 	s.Require().NoError(err)
 	s.Assert().Greater(len(tokens), 0, "should return tokens from rendered chat")
-	s.Assert().Equal(len(tokens), len(offsets), "offsets should match token count")
+	s.Assert().Nil(offsets, "RenderChatCompletion does not return character offsets")
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_Type() {
@@ -317,7 +332,7 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_TokenizeError() {
 
 	_, _, err := s.tokenizer.Render("test")
 	s.Assert().Error(err)
-	s.Assert().Contains(err.Error(), "tokenization failed")
+	s.Assert().Contains(err.Error(), "render completion failed")
 }
 
 func (s *UdsTokenizerTestSuite) TestUdsTokenizer_ChatTemplateError() {
@@ -331,7 +346,7 @@ func (s *UdsTokenizerTestSuite) TestUdsTokenizer_ChatTemplateError() {
 
 	_, _, err := s.tokenizer.RenderChat(renderReq)
 	s.Assert().Error(err)
-	s.Assert().Contains(err.Error(), "chat template rendering failed")
+	s.Assert().Contains(err.Error(), "render chat completion failed")
 }
 
 // convertFromProtoValue converts a proto Value back to a Go interface{} value.
