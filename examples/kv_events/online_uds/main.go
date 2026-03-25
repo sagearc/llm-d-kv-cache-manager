@@ -189,6 +189,10 @@ func startHTTPServer(ctx context.Context, indexer *kvcache.Indexer) *http.Server
 	mux.Handle("/metrics", promhttp.HandlerFor(ctrlmetrics.Registry, promhttp.HandlerOpts{EnableOpenMetrics: true}))
 
 	mux.HandleFunc("/score_completions", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		var req struct {
 			Prompt string `json:"prompt"`
 			Model  string `json:"model"`
