@@ -176,7 +176,7 @@ message RenderChatCompletionRequest {
   string chat_template = 4;                    // Override chat template (optional)
   bool add_generation_prompt = 5;              // Whether to append the generation prompt
   bool continue_final_message = 6;             // Whether to continue the final message
-  optional string chat_template_kwargs_json = 7; // Additional chat template arguments as JSON
+  optional string chat_template_kwargs = 7; // Additional chat template arguments as JSON
 }
 
 // RenderChatCompletionResponse contains the rendered output from OpenAIServingRender
