@@ -185,8 +185,33 @@ func (u *UdsTokenizer) initializeTokenizerForModel(ctx context.Context) error {
 	return fmt.Errorf("tokenizer initialization failed after %d attempts: %w", maxRetries, lastErr)
 }
 
+// Render tokenizes a plain-text prompt via the UDS renderer service.
 func (u *UdsTokenizer) Render(prompt string) ([]uint32, []types.Offset, error) {
-	return u.Encode(prompt, true)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+
+	resp, err := u.client.RenderCompletion(ctx, &tokenizerpb.RenderCompletionRequest{
+		ModelName: u.model,
+		Prompts:   []string{prompt},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("gRPC RenderCompletion request failed: %w", err)
+	}
+
+	if !resp.Success {
+		return nil, nil, fmt.Errorf("render completion failed: %s", resp.ErrorMessage)
+	}
+
+	if len(resp.Items) == 0 {
+		return nil, nil, fmt.Errorf("render completion returned no items")
+	}
+
+	item := resp.Items[0]
+	if !item.Success {
+		return nil, nil, fmt.Errorf("render completion item failed: %s", item.ErrorMessage)
+	}
+
+	return item.TokenIds, nil, nil
 }
 
 // Encode tokenizes the input string and returns the token IDs and offsets.
