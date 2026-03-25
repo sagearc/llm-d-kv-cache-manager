@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Integration tests for the RenderChatCompletion gRPC method.
+Integration tests for the RenderChatCompletion and RenderCompletion gRPC methods.
 
 These tests require a running gRPC server (provided by conftest.py) and a locally
 available model (controlled via the TEST_MODEL env var, default Qwen/Qwen2.5-0.5B-Instruct).
@@ -23,10 +23,11 @@ Run with:
 """
 
 import asyncio
-import json
 
 import tokenizerpb.tokenizer_pb2 as tokenizer_pb2
 from tokenizer_service.renderer import RendererService
+from vllm.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+from vllm.entrypoints.openai.completion.protocol import CompletionRequest
 
 
 class TestRenderChatCompletion:
@@ -70,14 +71,15 @@ class TestRenderChatCompletion:
             )
         )
         assert grpc_resp.request_id
-        # Build the equivalent JSON for the direct call
         messages_json = [
             {"role": "user", "content": "What is 2+2?"},
             {"role": "assistant", "content": "4"},
             {"role": "user", "content": "And 3+3?"},
         ]
-        request_json = json.dumps({"model": test_model, "messages": messages_json})
-        direct = asyncio.run(RendererService().render_chat(request_json, test_model))
+        direct = asyncio.run(RendererService().render_chat(
+            ChatCompletionRequest(model=test_model, messages=messages_json),
+            test_model,
+        ))
         assert list(grpc_resp.token_ids) == list(direct.token_ids)
 
 
@@ -106,9 +108,11 @@ class TestRenderCompletion:
         assert len(grpc_resp.items) == len(prompts)
         for item in grpc_resp.items:
             assert item.request_id
-        request_json = json.dumps({"model": test_model, "prompt": prompts})
         direct = asyncio.run(
-            RendererService().render_completion(request_json, test_model)
+            RendererService().render_completion(
+                CompletionRequest(model=test_model, prompt=prompts),
+                test_model,
+            )
         )
         for grpc_item, direct_item in zip(grpc_resp.items, direct):
             assert list(grpc_item.token_ids) == list(direct_item.token_ids)

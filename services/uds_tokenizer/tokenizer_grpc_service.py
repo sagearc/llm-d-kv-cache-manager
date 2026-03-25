@@ -15,6 +15,7 @@
 """Synchronous gRPC service for tokenizer operations optimized for CPU-intensive tasks."""
 
 import asyncio
+import json
 import grpc
 from grpc_reflection.v1alpha import reflection
 import logging
@@ -30,9 +31,12 @@ sys.path.append(os.path.dirname(__file__))
 # Import protobuf-generated modules
 import tokenizerpb.tokenizer_pb2 as tokenizer_pb2
 import tokenizerpb.tokenizer_pb2_grpc as tokenizer_pb2_grpc
+from google.protobuf.json_format import MessageToDict
 from tokenizer_service.tokenizer import TokenizerService
 from tokenizer_service.renderer import RendererService
 from utils.thread_pool_utils import get_thread_pool_size
+from vllm.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+from vllm.entrypoints.openai.completion.protocol import CompletionRequest
 
 
 class TokenizationServiceServicer(tokenizer_pb2_grpc.TokenizationServiceServicer):
@@ -180,10 +184,30 @@ class TokenizationServiceServicer(tokenizer_pb2_grpc.TokenizationServiceServicer
     ) -> tokenizer_pb2.RenderChatCompletionResponse:
         """Render an OpenAI chat completion request via OpenAIServingRender."""
         try:
+            d = MessageToDict(request, preserving_proto_field_name=True)
+
+            # parameters_json is a JSON string in the proto; unpack it to a dict
+            for tool in d.get("tools", []):
+                fn = tool.get("function", {})
+                if "parameters_json" in fn:
+                    fn["parameters"] = json.loads(fn.pop("parameters_json"))
+
+            if "chat_template_kwargs_json" in d:
+                d["chat_template_kwargs"] = json.loads(
+                    d.pop("chat_template_kwargs_json")
+                )
+
+            chat_request = ChatCompletionRequest(
+                model=d["model_name"],
+                messages=d.get("messages", []),
+                tools=d.get("tools") or None,
+                chat_template=d.get("chat_template") or None,
+                add_generation_prompt=d.get("add_generation_prompt", False),
+                continue_final_message=d.get("continue_final_message", False),
+                chat_template_kwargs=d.get("chat_template_kwargs"),
+            )
             result = asyncio.run_coroutine_threadsafe(
-                self.renderer_service.render_chat(
-                    request.request_json, request.model_name
-                ),
+                self.renderer_service.render_chat(chat_request, request.model_name),
                 self._loop,
             ).result()
             return self._generate_request_to_proto(result)
@@ -198,9 +222,13 @@ class TokenizationServiceServicer(tokenizer_pb2_grpc.TokenizationServiceServicer
     ) -> tokenizer_pb2.RenderCompletionResponse:
         """Render an OpenAI completion request via OpenAIServingRender."""
         try:
+            completion_request = CompletionRequest(
+                model=request.model_name,
+                prompt=list(request.prompts),
+            )
             results = asyncio.run_coroutine_threadsafe(
                 self.renderer_service.render_completion(
-                    request.request_json, request.model_name
+                    completion_request, request.model_name
                 ),
                 self._loop,
             ).result()

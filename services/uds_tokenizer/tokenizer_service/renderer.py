@@ -14,7 +14,6 @@
 
 """Renderer service wrapping vLLM's OpenAIServingRender for chat completion preprocessing."""
 
-import json
 import logging
 import threading
 
@@ -95,36 +94,18 @@ class RendererService:
             raise RendererError(f"Failed to load renderer for model: {model_name}")
         return self._renderers[model_name]
 
-    async def render_chat(self, request_json: str, model_name: str):
+    async def render_chat(self, request: ChatCompletionRequest, model_name: str):
         """Render an OpenAI chat completion request, returning a vLLM GenerateRequest."""
         serving_render = self._get_renderer(model_name)
-
-        try:
-            request_data = json.loads(request_json)
-        except json.JSONDecodeError as e:
-            raise RendererError(f"Invalid request JSON: {e}") from e
-
-        chat_request = ChatCompletionRequest(**request_data)
-        result = await serving_render.render_chat_request(chat_request)
-
+        result = await serving_render.render_chat_request(request)
         if isinstance(result, ErrorResponse):
             raise RendererError(f"Render failed: {result.message}")
-
         return result
 
-    async def render_completion(self, request_json: str, model_name: str):
+    async def render_completion(self, request: CompletionRequest, model_name: str):
         """Render an OpenAI completion request, returning a list of vLLM GenerateRequests."""
         serving_render = self._get_renderer(model_name)
-
-        try:
-            request_data = json.loads(request_json)
-        except json.JSONDecodeError as e:
-            raise RendererError(f"Invalid request JSON: {e}") from e
-
-        completion_request = CompletionRequest(**request_data)
-        result = await serving_render.render_completion_request(completion_request)
-
+        result = await serving_render.render_completion_request(request)
         if isinstance(result, ErrorResponse):
             raise RendererError(f"Render failed: {result.message}")
-
         return result
