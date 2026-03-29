@@ -658,10 +658,11 @@ EXAMPLE_SHORTS := offline online valkey kv_cache_index kv_cache_index_service
 $(EXAMPLE_SHORTS):
 
 .PHONY: run-example
-run-example: $(EXAMPLE) image-build-uds ## Run the example with UDS tokenizer in Docker (e.g., make run-example offline)
+run-example: $(EXAMPLE) ## Run the example with UDS tokenizer in Docker (e.g., make run-example offline); requires image-build-uds to have been run first
 	@printf "\033[33;1m==== Starting UDS tokenizer container ====\033[0m\n"
 	@$(CONTAINER_TOOL) run -d --rm --name uds-tokenizer-example --network host \
 		-e GRPC_PORT=$(UDS_TOKENIZER_GRPC_PORT) \
+		-e PROBE_PORT=$(UDS_TOKENIZER_HEALTH_PORT) \
 		$(UDS_TOKENIZER_IMAGE)
 	@printf "Waiting for tokenizer to be ready"
 	@for i in $$(seq 1 30); do \
@@ -676,5 +677,6 @@ run-example: $(EXAMPLE) image-build-uds ## Run the example with UDS tokenizer in
 		printf "."; sleep 2; \
 	done
 	@printf "\033[33;1m==== Running example $(EXAMPLE) ====\033[0m\n"
-	@TOKENIZER_ENDPOINT=localhost:$(UDS_TOKENIZER_GRPC_PORT) ./$(EXAMPLE) || true
-	@$(CONTAINER_TOOL) stop uds-tokenizer-example 2>/dev/null || true
+	@TOKENIZER_ENDPOINT=localhost:$(UDS_TOKENIZER_GRPC_PORT) ./$(EXAMPLE); status=$$?; \
+		$(CONTAINER_TOOL) stop uds-tokenizer-example 2>/dev/null || true; \
+		exit $$status

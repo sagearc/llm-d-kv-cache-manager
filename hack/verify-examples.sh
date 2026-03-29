@@ -8,8 +8,12 @@ fail() {
 }
 
 stop_tokenizer() {
-  docker stop uds-tokenizer-example 2>/dev/null || true
+  container_tool="${CONTAINER_TOOL:-docker}"
+  "${container_tool}" stop uds-tokenizer-example 2>/dev/null || true
 }
+
+# Ensure tokenizer container is always cleaned up, even on failures/timeouts.
+trap 'stop_tokenizer' EXIT INT TERM
 
 # 1. Test build
 if ! make build-examples; then
@@ -43,7 +47,6 @@ echo "[OK] build-examples succeeded."
     fail "offline example did not complete successfully."
   fi
 )
-stop_tokenizer
 
 # 3. Test online example
 (
@@ -77,7 +80,6 @@ stop_tokenizer
     fi
   fi
 )
-stop_tokenizer
 
 # 4. Test kv_cache_index example
 (
