@@ -658,7 +658,7 @@ EXAMPLE_SHORTS := offline online valkey kv_cache_index kv_cache_index_service
 $(EXAMPLE_SHORTS):
 
 .PHONY: run-example
-run-example: $(EXAMPLE) ## Run the example with UDS tokenizer in Docker (e.g., make run-example offline); requires image-build-uds to have been run first
+run-example: check-container-tool $(EXAMPLE) ## Run the example with UDS tokenizer in Docker (e.g., make run-example offline); requires image-build-uds to have been run first
 	@printf "\033[33;1m==== Starting UDS tokenizer container ====\033[0m\n"
 	@$(CONTAINER_TOOL) run -d --rm --name uds-tokenizer-example --network host \
 		-e GRPC_PORT=$(UDS_TOKENIZER_GRPC_PORT) \
