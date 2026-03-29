@@ -237,8 +237,7 @@ func setupEventsPool(ctx context.Context, kvBlockIndex kvblock.Index) (*kvevents
 	}
 	adapter, err := engineadapter.NewAdapter(cfg.EngineType)
 	if err != nil {
-		logger.Error(err, "Failed to create engine adapter")
-		return nil
+		return nil, err
 	}
 
 	pool := kvevents.NewPool(cfg, kvBlockIndex, tokenProcessor, adapter)
